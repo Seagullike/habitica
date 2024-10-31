@@ -1,7 +1,6 @@
 <template>
   <div>
     <buy-gems-modal v-if="user" />
-    <!--modify-inventory(v-if="isUserLoaded")-->
     <footer>
       <!-- Product -->
       <div class="product">
@@ -22,7 +21,7 @@
             </a>
           </li>
           <li>
-            <router-link to="/group-plans">
+            <router-link :to="user ? '/group-plans' : '/static/group-plans'">
               {{ $t('groupPlans') }}
             </router-link>
           </li>
@@ -291,7 +290,47 @@
       </div>
 
       <div
-        v-if="!IS_PRODUCTION && isUserLoaded"
+        class="time-travel"
+        v-if="TIME_TRAVEL_ENABLED && user?.permissions?.fullAccess"
+        :key="lastTimeJump"
+      >
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(-1)"
+        >-1 Day</a>
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(-7)"
+        >-7 Days</a>
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(-30)"
+        >-30 Days</a>
+        <div class="my-2">
+          Time Traveling! It is {{ new Date().toLocaleDateString() }}
+          <a
+            class="btn btn-warning btn-small"
+            @click="resetTime()"
+          >
+            Reset
+        </a>
+        </div>
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(1)"
+        >+1 Day</a>
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(7)"
+        >+7 Days</a>
+        <a
+          class="btn btn-secondary mr-1"
+          @click="jumpTime(30)"
+        >+30 Days</a>
+      </div>
+
+      <div
+        v-if="DEBUG_ENABLED && isUserLoaded"
         class="debug-toggle"
       >
         <button
@@ -362,6 +401,10 @@
               tooltip="+1000 to boss quests. 300 items to collection quests"
               @click="addQuestProgress()"
             >Quest Progress Up</a>
+            <a
+              class="btn btn-secondary"
+              @click="bossRage()"
+            >+ Boss Rage 😡</a>
             <a
               class="btn btn-secondary"
               @click="makeAdmin()"
@@ -469,6 +512,8 @@ li {
   grid-area: debug-pop;
    }
 
+.time-travel { grid-area: time-travel;}
+
 footer {
   background-color: $gray-500;
   color: $gray-50;
@@ -489,7 +534,8 @@ footer {
     "donate-text donate-text donate-text donate-button social"
     "hr hr hr hr hr"
     "copyright copyright melior privacy-terms privacy-terms"
-    "debug-toggle debug-toggle debug-toggle blank blank";
+    "time-travel time-travel time-travel time-travel time-travel"
+    "debug-toggle debug-toggle debug-toggle debug-toggle debug-toggle";
   grid-template-columns: repeat(5, 1fr);
   grid-template-rows: auto;
 
@@ -693,6 +739,7 @@ h3 {
       "privacy-policy privacy-policy"
       "mobile-terms mobile-terms"
       "melior melior"
+      "time-travel time-travel"
       "debug-toggle debug-toggle";
     grid-template-columns: repeat(2, 2fr);
     grid-template-rows: auto;
@@ -772,6 +819,7 @@ h3 {
 // modules
 import axios from 'axios';
 import moment from 'moment';
+import Vue from 'vue';
 
 // images
 import melior from '@/assets/svg/melior.svg';
@@ -785,13 +833,24 @@ import heart from '@/assets/svg/heart.svg';
 import { mapState } from '@/libs/store';
 import buyGemsModal from './payments/buyGemsModal.vue';
 import reportBug from '@/mixins/reportBug.js';
+import { worldStateMixin } from '@/mixins/worldState';
 
-const IS_PRODUCTION = process.env.NODE_ENV === 'production'; // eslint-disable-line no-process-env
+const DEBUG_ENABLED = process.env.DEBUG_ENABLED === 'true'; // eslint-disable-line no-process-env
+const TIME_TRAVEL_ENABLED = process.env.TIME_TRAVEL_ENABLED === 'true'; // eslint-disable-line no-process-env
+let sinon;
+if (TIME_TRAVEL_ENABLED) {
+  // eslint-disable-next-line global-require
+  sinon = await import('sinon');
+}
+
 export default {
   components: {
     buyGemsModal,
   },
-  mixins: [reportBug],
+  mixins: [
+    reportBug,
+    worldStateMixin,
+  ],
   data () {
     return {
       icons: Object.freeze({
@@ -803,7 +862,9 @@ export default {
         heart,
       }),
       debugMenuShown: false,
-      IS_PRODUCTION,
+      DEBUG_ENABLED,
+      TIME_TRAVEL_ENABLED,
+      lastTimeJump: null,
     };
   },
   computed: {
@@ -865,6 +926,27 @@ export default {
         'stats.mp': this.user.stats.mp + 10000,
       });
     },
+    async jumpTime (amount) {
+      const response = await axios.post('/api/v4/debug/jump-time', { offsetDays: amount });
+      if (amount > 0) {
+        Vue.config.clock.jump(amount * 24 * 60 * 60 * 1000);
+      } else {
+        Vue.config.clock.setSystemTime(moment().add(amount, 'days').toDate());
+      }
+      this.lastTimeJump = response.data.data.time;
+      this.triggerGetWorldState(true);
+    },
+    async resetTime () {
+      const response = await axios.post('/api/v4/debug/jump-time', { reset: true });
+      const time = new Date(response.data.data.time);
+      Vue.config.clock.restore();
+      Vue.config.clock = sinon.useFakeTimers({
+        now: time,
+        shouldAdvanceTime: true,
+      });
+      this.lastTimeJump = response.data.data.time;
+      this.triggerGetWorldState(true);
+    },
     addExp () {
       // @TODO: Name these variables better
       let exp = 0;
@@ -888,6 +970,10 @@ export default {
       //  @TODO:  Notification.text('Quest progress increased');
       //  @TODO:  User.sync();
     },
+    async bossRage () {
+      await axios.post('/api/v4/debug/boss-rage');
+    },
+
     async makeAdmin () {
       await axios.post('/api/v4/debug/make-admin');
       // @TODO: Notification.text('You are now an admin!

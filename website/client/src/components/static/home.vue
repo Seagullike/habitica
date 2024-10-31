@@ -121,7 +121,7 @@
                 @click="socialAuth('apple')"
               >
                 <div
-                  class="svg-icon social-icon apple-icon"
+                  class="svg svg-icon social-icon apple-icon color"
                   v-html="icons.appleIcon"
                 ></div>
                 <span>{{ $t('signUpWithSocial', {social: 'Apple'}) }}</span>
@@ -479,6 +479,7 @@
 
     .apple-icon {
       margin-top: -1px;
+      color: $white;
     }
 
     .strike {
@@ -780,9 +781,10 @@
 <script>
 import hello from 'hellojs';
 import debounce from 'lodash/debounce';
-import isEmail from 'validator/lib/isEmail';
+import isEmail from 'validator/es/lib/isEmail';
 import { MINIMUM_PASSWORD_LENGTH } from '@/../../common/script/constants';
 import { buildAppleAuthUrl } from '../../libs/auth';
+import sanitizeRedirect from '@/mixins/sanitizeRedirect';
 import googlePlay from '@/assets/images/home/google-play-badge.svg';
 import iosAppStore from '@/assets/images/home/ios-app-store.svg';
 import iphones from '@/assets/images/home/iphones.svg';
@@ -792,7 +794,7 @@ import pixelHorizontal2 from '@/assets/images/home/pixel-horizontal-2.svg';
 import pixelHorizontal3 from '@/assets/images/home/pixel-horizontal-3.svg';
 import facebookSquareIcon from '@/assets/svg/facebook-square.svg';
 import googleIcon from '@/assets/svg/google.svg';
-import appleIcon from '@/assets/svg/apple.svg';
+import appleIcon from '@/assets/svg/apple_black.svg';
 import cnet from '@/assets/svg/cnet.svg';
 import fastCompany from '@/assets/svg/fast-company.svg';
 import discover from '@/assets/images/home/discover.svg';
@@ -803,6 +805,7 @@ import makeuseof from '@/assets/images/home/make-use-of.svg';
 import thenewyorktimes from '@/assets/images/home/the-new-york-times.svg';
 
 export default {
+  mixins: [sanitizeRedirect],
   data () {
     return {
       icons: Object.freeze({
@@ -922,7 +925,9 @@ export default {
         groupInvite,
       });
 
-      window.location.href = this.$route.query.redirectTo || '/';
+      const redirect = this.sanitizeRedirect(this.$route.query.redirectTo);
+
+      window.location.href = redirect;
     },
     playButtonClick () {
       this.$router.push('/register');

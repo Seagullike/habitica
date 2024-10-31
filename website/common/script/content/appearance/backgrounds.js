@@ -1,12 +1,10 @@
 import camelCase from 'lodash/camelCase';
 import forOwn from 'lodash/forOwn';
-import moment from 'moment';
-import omitBy from 'lodash/omitBy';
 import upperFirst from 'lodash/upperFirst';
 import t from '../translation';
 
 /* eslint-disable camelcase */
-const plannedBackgrounds = {
+const backgrounds = {
   backgrounds062014: {
     beach: { },
     fairy_ring: { },
@@ -612,6 +610,34 @@ const plannedBackgrounds = {
     dog_park: { },
     rainy_rainforest: { },
   },
+  backgrounds042024: {
+    forest_sunset: { },
+    wall_flowering_vines: { },
+    container_garden: { },
+  },
+  backgrounds052024: {
+    dragons_back: { },
+    maypole: { },
+    potters_studio: { },
+  },
+  backgrounds062024: {
+    shell_gate: { },
+  },
+  backgrounds072024: {
+    river_bottom: { },
+  },
+  backgrounds082024: {
+    savanna: { },
+  },
+  backgrounds092024: {
+    magic_door_in_forest: { },
+  },
+  backgrounds102024: {
+    surrounded_by_ghosts: { },
+  },
+  backgrounds112024: {
+    castle_hall_with_hearth: { },
+  },
   eventBackgrounds: {
     birthday_bash: {
       price: 0,
@@ -654,19 +680,7 @@ const plannedBackgrounds = {
 };
 /* eslint-enable quote-props */
 
-const releaseDates = {
-  backgrounds102023: '2023-10-10T08:00-04:00',
-  backgrounds112023: '2023-11-07T08:00-05:00',
-  backgrounds122023: '2023-12-05T08:00-05:00',
-  backgrounds012024: '2024-01-04T08:00-05:00',
-  backgrounds022024: '2024-02-06T08:00-05:00',
-  backgrounds032024: '2024-03-05T08:00-05:00',
-};
-
 const flat = {};
-
-const backgrounds = omitBy(plannedBackgrounds, (bgSet, key) => releaseDates[key]
-  && moment().isBefore(releaseDates[key]));
 
 forOwn(backgrounds, (backgroundsInSet, set) => {
   forOwn(backgroundsInSet, (background, bgKey) => {

@@ -85,22 +85,6 @@ describe('POST /group/:groupId/join', () => {
         await expect(user.get('/user')).to.eventually.have.nested.property('items.quests.basilist', 1);
       });
 
-      it('notifies inviting user that their invitation was accepted', async () => {
-        await invitedUser.post(`/groups/${guild._id}/join`);
-
-        const inviter = await user.get('/user');
-        const expectedData = {
-          headerText: t('invitationAcceptedHeader'),
-          bodyText: t('invitationAcceptedBody', {
-            username: invitedUser.auth.local.username,
-            groupName: guild.name,
-          }),
-        };
-
-        expect(inviter.notifications[1].type).to.eql('GROUP_INVITE_ACCEPTED');
-        expect(inviter.notifications[1].data).to.eql(expectedData);
-      });
-
       it('awards Joined Guild achievement', async () => {
         await invitedUser.post(`/groups/${guild._id}/join`);
 
@@ -155,27 +139,19 @@ describe('POST /group/:groupId/join', () => {
         await expect(invitedUser.get('/user')).to.eventually.have.nested.property('party._id', party._id);
       });
 
-      it('notifies inviting user that their invitation was accepted', async () => {
-        await invitedUser.post(`/groups/${party._id}/join`);
-
-        const inviter = await user.get('/user');
-
-        const expectedData = {
-          headerText: t('invitationAcceptedHeader'),
-          bodyText: t('invitationAcceptedBody', {
-            username: invitedUser.auth.local.username,
-            groupName: party.name,
-          }),
-        };
-
-        expect(inviter.notifications[0].type).to.eql('GROUP_INVITE_ACCEPTED');
-        expect(inviter.notifications[0].data).to.eql(expectedData);
-      });
-
       it('clears invitation from user when joining party', async () => {
         await invitedUser.post(`/groups/${party._id}/join`);
 
         await expect(invitedUser.get('/user')).to.eventually.not.have.nested.property('invitations.parties[0].id');
+      });
+
+      it('clears party.seeking from user when joining party', async () => {
+        await invitedUser.updateOne({ 'party.seeking': new Date() });
+        await invitedUser.post(`/groups/${party._id}/join`);
+
+        const updatedUser = await invitedUser.get('/user');
+
+        await expect(updatedUser.party.seeking).to.not.exist;
       });
 
       it('increments memberCount when joining party', async () => {

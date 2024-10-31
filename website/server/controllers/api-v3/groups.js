@@ -26,7 +26,7 @@ import common from '../../../common';
 import payments from '../../libs/payments/payments';
 import stripePayments from '../../libs/payments/stripe';
 import amzLib from '../../libs/payments/amazon';
-import apiError from '../../libs/apiError';
+import { apiError } from '../../libs/apiError';
 import { model as UserNotification } from '../../models/userNotification';
 
 const { MAX_SUMMARY_SIZE_FOR_GUILDS } = common.constants;
@@ -136,6 +136,7 @@ api.createGroup = {
       if (user.party._id) throw new NotAuthorized(res.t('messageGroupAlreadyInParty'));
 
       user.party._id = group._id;
+      user.party.seeking = undefined;
     }
 
     let savedGroup;
@@ -590,7 +591,7 @@ api.joinGroup = {
         // Clear all invitations of new user and reset looking for party state
         user.invitations.parties = [];
         user.invitations.party = {};
-        user.party.seeking = null;
+        user.party.seeking = undefined;
 
         // invite new user to pending quest
         if (group.quest.key && !group.quest.active) {
@@ -609,7 +610,6 @@ api.joinGroup = {
 
       if (hasInvitation) {
         isUserInvited = true;
-        inviter = hasInvitation.inviter;
       } else {
         isUserInvited = group.privacy !== 'private';
       }
@@ -633,42 +633,28 @@ api.joinGroup = {
       group.leader = user._id; // If new user is only member -> set as leader
     }
 
+    let promises = [user.save()];
+
     if (group.type === 'party') {
       // For parties we count the number of members from the database to get the correct value.
       // See #12275 on why this is necessary and only done for parties.
       const currentMembers = await group.getMemberCount();
-      group.memberCount = currentMembers + 1;
-    } else {
-      group.memberCount += 1;
-    }
+      // Load the inviter
+      if (inviter) inviter = await User.findById(inviter).exec();
 
-    let promises = [group.save(), user.save()];
-
-    // Load the inviter
-    if (inviter) inviter = await User.findById(inviter).exec();
-
-    // Check the inviter again, could be a deleted account
-    if (inviter) {
-      const data = {
-        headerText: common.i18n.t('invitationAcceptedHeader', inviter.preferences.language),
-        bodyText: common.i18n.t('invitationAcceptedBody', {
-          groupName: group.name,
-          username: user.profile.name,
-        }, inviter.preferences.language),
-      };
-      inviter.addNotification('GROUP_INVITE_ACCEPTED', data);
-
-      // Reward Inviter
-      if (group.type === 'party') {
+      // Check the inviter again, could be a deleted account
+      if (inviter) {
+        // Reward Inviter
         if (!inviter.items.quests.basilist) {
           inviter.items.quests.basilist = 0;
         }
         inviter.items.quests.basilist += 1;
         inviter.markModified('items.quests');
+        promises.push(inviter.save());
       }
-    }
+      group.memberCount = currentMembers + 1;
 
-    if (group.type === 'party' && inviter) {
+      // Handle awarding party-related achievements
       if (group.memberCount > 1) {
         const notification = new UserNotification({ type: 'ACHIEVEMENT_PARTY_UP' });
 
@@ -676,20 +662,12 @@ api.joinGroup = {
           {
             $or: [{ 'party._id': group._id }, { _id: user._id }],
             'achievements.partyUp': { $ne: true },
-            _id: { $ne: inviter._id },
           },
           {
             $set: { 'achievements.partyUp': true },
             $push: { notifications: notification.toObject() },
           },
         ).exec());
-
-        if (inviter) {
-          if (inviter.achievements.partyUp !== true) {
-            inviter.achievements.partyUp = true;
-            inviter.addNotification('ACHIEVEMENT_PARTY_UP');
-          }
-        }
       }
 
       if (group.memberCount > 3) {
@@ -699,22 +677,18 @@ api.joinGroup = {
           {
             $or: [{ 'party._id': group._id }, { _id: user._id }],
             'achievements.partyOn': { $ne: true },
-            _id: { $ne: inviter._id },
           },
           {
             $set: { 'achievements.partyOn': true },
             $push: { notifications: notification.toObject() },
           },
         ).exec());
-
-        if (inviter) {
-          if (inviter.achievements.partyOn !== true) {
-            inviter.achievements.partyOn = true;
-            inviter.addNotification('ACHIEVEMENT_PARTY_ON');
-          }
-        }
       }
+    } else {
+      group.memberCount += 1;
     }
+
+    promises.push(group.save());
 
     const analyticsObject = {
       uuid: user._id,
@@ -726,15 +700,9 @@ api.joinGroup = {
       privacy: group.privacy,
       headers: req.headers,
       invited: isUserInvited,
+      seekingParty: group.type === 'party' ? seekingParty : null,
     };
-    if (group.type === 'party') {
-      analyticsObject.seekingParty = seekingParty;
-    }
-    if (group.privacy === 'public') {
-      analyticsObject.groupName = group.name;
-    }
 
-    if (inviter) promises.push(inviter.save());
     promises = await Promise.all(promises);
 
     if (group.hasNotCancelled()) {
@@ -742,7 +710,7 @@ api.joinGroup = {
       await group.updateGroupPlan();
     }
 
-    const response = await Group.toJSONCleanChat(promises[0], user);
+    const response = await Group.toJSONCleanChat(group, user);
     const leader = await User.findById(response.leader).select(nameFields).exec();
     if (leader) {
       response.leader = leader.toJSON({ minimize: true });
@@ -1331,11 +1299,16 @@ api.removeGroupManager = {
 api.getGroupPlans = {
   method: 'GET',
   url: '/group-plans',
-  middlewares: [authWithHeaders()],
+  middlewares: [authWithHeaders({ userFieldsToInclude: ['guilds', 'party._id'] })],
   async handler (req, res) {
     const { user } = res.locals;
 
     const userGroups = user.getGroups();
+
+    if (userGroups.length === 0) {
+      res.respond(200, []);
+      return;
+    }
 
     const groups = await Group
       .find({
